@@ -1,3 +1,7 @@
+module.exports = {
+	getOAuth2Client: getOAuth2Client
+};
+
 const fs = require('fs');
 const util = require('util');
 const readline = require('readline');
@@ -14,7 +18,7 @@ const SCOPES = [
 ];
 const TOKEN_PATH = 'token.json';
 
-async function main() {
+async function getOAuth2Client() {
 	let creds;
 	try {
 		creds = await readFilePromise('authkey.json');
@@ -22,8 +26,7 @@ async function main() {
 		return console.error('Error loading client secret file:', err);
 	}
 
-	const oAuth2Client = await authorize(JSON.parse(creds));
-	await listAccounts(oAuth2Client);
+	return authorize(JSON.parse(creds));
 }
 
 async function authorize(credentials) {
@@ -88,12 +91,3 @@ async function getNewToken(oAuth2Client) {
 
 	return oAuth2Client;
 }
-
-async function listAccounts(oAuth2Client) {
-	const tagmanager = google.tagmanager({version: 'v2', oAuth2Client});
-
-	const res = await tagmanager.accounts.list();
-	console.log(res.data);
-}
-
-main().catch(err => { console.error(err); });
