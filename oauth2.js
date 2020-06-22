@@ -96,4 +96,4 @@ async function listAccounts(oAuth2Client) {
 	console.log(res.data);
 }
 
-main().catch(err => { console.error(err); });
+main().catch(err => { console.error(err); throw err; });
