@@ -13,5 +13,8 @@
     "googleapis": "^52.1.0",
     "open": "^7.0.4",
     "server-destroy": "^1.0.1"
+  },
+  "devDependencies": {
+    "exponential-backoff": "^3.0.1"
   }
 }
