@@ -1,27 +1,20 @@
 const {google} = require('googleapis');
 
-let oAuth2Client, tagmanager;
-const oauth2 = require('./oauth2.js');
+let tagmanager;
+const {getOAuth2Client} = require('./oauth2.js');
 
 const msleep = (ms) => new Promise(resolve => {
 	setTimeout(resolve, ms);
 });
 
 async function cloneExampleContainer(targetContainerName, targetAccountId, exampleContainerPublicId) {
-	oAuth2Client = await oauth2.getOAuth2Client();
-	tagmanager = google.tagmanager({version: 'v2', auth: oAuth2Client});
+	tagmanager = google.tagmanager({version: 'v2', auth: await getOAuth2Client()});
 
 	const testAccount = await getAccountById("38028818");
 	const exampleContainer = await getContainerByAccountAndPublicId(testAccount, exampleContainerPublicId);
 	const targetContainer = await findOrCreateContainer(targetContainerName, targetAccountId);
 	await cloneContainerEntities(exampleContainer, targetContainer);
 }
-
-async function getAccountById(accountId) {
-	const response = await tagmanager.accounts.get({path: 'accounts/' + accountId});
-	return response.data;
-}
-
 
 async function getContainerByPublicId(publicId) {
 	const response = await tagmanager.accounts.list();
@@ -35,20 +28,6 @@ async function getContainerByPublicId(publicId) {
 		await msleep(ms);
 	}
 	throw "Could not find container.";
-}
-
-async function getContainerByAccountAndPublicId(account, publicId) {
-	const response = await tagmanager.accounts.containers.list({parent: account.path});
-	const containers = response.data.container;
-
-	return !containers ? undefined : containers.find(container => container.publicId === publicId);
-}
-
-async function getContainerByAccountAndName(account, targetName) {
-	const response = await tagmanager.accounts.containers.list({parent: account.path});
-	const containers = response.data.container;
-
-	return !containers ? undefined : containers.find(container => container.name === targetName);
 }
 
 async function findOrCreateContainer(newContainerName, targetAccountId) {
@@ -69,6 +48,33 @@ async function findOrCreateContainer(newContainerName, targetAccountId) {
 	return response.data;
 }
 
+async function cloneContainerEntities(exampleContainer, targetContainer) {
+	const exampleWorkspace = await getDefaultWorkspaceFromContainer(exampleContainer);
+	const targetWorkspace = await getDefaultWorkspaceFromContainer(targetContainer);
+
+	const propNames = ["tag", "variable", "trigger"];
+	const exampleEntities = await Promise.all(propNames.map(name => getPropertyListFromWorkspace(exampleWorkspace, name)));
+}
+
+async function getAccountById(accountId) {
+	const response = await tagmanager.accounts.get({path: 'accounts/' + accountId});
+	return response.data;
+}
+
+async function getContainerByAccountAndPublicId(account, publicId) {
+	const response = await tagmanager.accounts.containers.list({parent: account.path});
+	const containers = response.data.container;
+
+	return !containers ? undefined : containers.find(container => container.publicId === publicId);
+}
+
+async function getContainerByAccountAndName(account, targetName) {
+	const response = await tagmanager.accounts.containers.list({parent: account.path});
+	const containers = response.data.container;
+
+	return !containers ? undefined : containers.find(container => container.name === targetName);
+}
+
 async function getDefaultWorkspaceFromContainer(container) {
 	const response = await tagmanager.accounts.containers.workspaces.list({parent: container.path});
 	const workspaces = response.data.workspace;
@@ -79,14 +85,6 @@ async function getDefaultWorkspaceFromContainer(container) {
 async function getPropertyListFromWorkspace(workspace, property) {
 	const response = await tagmanager.accounts.containers.workspaces[property + 's'].list({parent: workspace.path});
 	return response.data[property];
-}
-
-async function cloneContainerEntities(exampleContainer, targetContainer) {
-	const exampleWorkspace = await getDefaultWorkspaceFromContainer(exampleContainer);
-	const targetWorkspace = await getDefaultWorkspaceFromContainer(targetContainer);
-
-	const propNames = ["tag", "variable", "trigger"];
-	const exampleEntities = await Promise.all(propNames.map(name => getPropertyListFromWorkspace(exampleWorkspace, name)));
 }
 
 cloneExampleContainer("noah api onboarding container", "28458393", "GTM-PNJH2T")
