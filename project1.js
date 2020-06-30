@@ -13,6 +13,7 @@ async function cloneExampleContainer(targetContainerName, targetAccountId, examp
 	const testAccount = await getAccountById("38028818");
 	const exampleContainer = await getContainerByAccountAndPublicId(testAccount, exampleContainerPublicId);
 	const targetContainer = await findOrCreateContainer(targetContainerName, targetAccountId);
+
 	await cloneContainerEntities(exampleContainer, targetContainer);
 }
 
@@ -49,11 +50,31 @@ async function findOrCreateContainer(newContainerName, targetAccountId) {
 }
 
 async function cloneContainerEntities(exampleContainer, targetContainer) {
-	const exampleWorkspace = await getDefaultWorkspaceFromContainer(exampleContainer);
-	const targetWorkspace = await getDefaultWorkspaceFromContainer(targetContainer);
+	const exampleWorkspace = await getDefaultWorkspaceByContainer(exampleContainer);
+	const targetWorkspace = await getDefaultWorkspaceByContainer(targetContainer);
 
-	const propNames = ["tag", "variable", "trigger"];
-	const exampleEntities = await Promise.all(propNames.map(name => getPropertyListFromWorkspace(exampleWorkspace, name)));
+	const propNames = ["trigger", "tag", "variable"];
+	const exampleEntities = await Promise.all(propNames.map(prop => getPropertyListByWorkspace(exampleWorkspace, prop)));
+
+	for (let trigger of exampleEntities[0]) {
+		await tagmanager.accounts.containers.workspaces.triggers.create({
+			parent: targetWorkspace.path,
+			requestBody: trigger
+		});
+	}
+
+	for (let tag of exampleEntities[1]) {
+
+	}
+
+	for (let variable of exampleEntities[2]) {
+		await tagmanager.accounts.containers.workspaces.variables.create({
+			parent: targetWorkspace.path,
+			requestBody: variable
+		});
+	}
+
+	await clearWorkspaceEntities(targetWorkspace);
 }
 
 async function getAccountById(accountId) {
@@ -61,30 +82,47 @@ async function getAccountById(accountId) {
 	return response.data;
 }
 
-async function getContainerByAccountAndPublicId(account, publicId) {
+async function getContainerListByAccount(account) {
 	const response = await tagmanager.accounts.containers.list({parent: account.path});
-	const containers = response.data.container;
+	return response.data.container;
+}
 
+async function getContainerByAccountAndPublicId(account, publicId) {
+	const containers = await getContainerListByAccount(account);
 	return !containers ? undefined : containers.find(container => container.publicId === publicId);
 }
 
 async function getContainerByAccountAndName(account, targetName) {
-	const response = await tagmanager.accounts.containers.list({parent: account.path});
-	const containers = response.data.container;
-
+	const containers = await getContainerListByAccount(account);
 	return !containers ? undefined : containers.find(container => container.name === targetName);
 }
 
-async function getDefaultWorkspaceFromContainer(container) {
+async function getDefaultWorkspaceByContainer(container) {
 	const response = await tagmanager.accounts.containers.workspaces.list({parent: container.path});
 	const workspaces = response.data.workspace;
 
 	return !workspaces ? undefined : workspaces.find(workspace => workspace.name === "Default Workspace");
 }
 
-async function getPropertyListFromWorkspace(workspace, property) {
+async function getPropertyListByWorkspace(workspace, property) {
 	const response = await tagmanager.accounts.containers.workspaces[property + 's'].list({parent: workspace.path});
 	return response.data[property];
+}
+
+async function getPropertyByWorkspaceAndName(workspace, name, property) {
+	const entities = await getPropertyListByWorkspace(workspace, property);
+	return !entities ? undefined : entities.find(entity => entity.name === name);
+}
+
+async function clearWorkspaceEntities(workspace) {
+	for (let prop of ["trigger", "tag", "variable"]) {
+		const entities = await getPropertyListByWorkspace(workspace, prop);
+		if (entities) {
+			for (let entity of entities) {
+				tagmanager.accounts.containers.workspaces[prop + 's'].delete({path: entity.path});
+			}
+		}
+	}
 }
 
 cloneExampleContainer("noah api onboarding container", "28458393", "GTM-PNJH2T")
