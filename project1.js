@@ -53,13 +53,42 @@ async function cloneContainerEntities(exampleContainer, targetContainer) {
 	const exampleWorkspace = await getDefaultWorkspaceByContainer(exampleContainer);
 	const targetWorkspace = await getDefaultWorkspaceByContainer(targetContainer);
 
-	const propNames = ["trigger", "tag", "variable"];
+	const propNames = ['trigger', 'tag', 'variable'];
 	const exampleEntities = await Promise.all(propNames.map(prop => getPropertyListByWorkspace(exampleWorkspace, prop)));
 
 	for (let trigger of exampleEntities[0]) {
+		let requestBody = {};
+		const fields = [
+			'autoEventFilter',
+			'checkValidation',
+			'continuousTimeMinMilliseconds',
+			'customEventFilter',
+			'eventName',
+			'filter',
+			'horizontalScrollPercentageList',
+			'interval',
+			'intervalSeconds',
+			'limit',
+			'maxTimerLengthSeconds',
+			'name',
+			'parameter',
+			'selector',
+			'totalTimeMinMilliseconds',
+			'type',
+			'uniqueTriggerId',
+			'verticalScrollPercentageList',
+			'visibilitySelector',
+			'visiblePercentageMax',
+			'visiblePercentageMin',
+			'waitForTags',
+			'waitForTagsTimeout'
+		];
+		for (let field of fields) {
+			requestBody[field] = trigger[field];
+		}
 		await tagmanager.accounts.containers.workspaces.triggers.create({
 			parent: targetWorkspace.path,
-			requestBody: trigger
+			requestBody: requestBody
 		});
 	}
 
@@ -68,10 +97,7 @@ async function cloneContainerEntities(exampleContainer, targetContainer) {
 	}
 
 	for (let variable of exampleEntities[2]) {
-		await tagmanager.accounts.containers.workspaces.variables.create({
-			parent: targetWorkspace.path,
-			requestBody: variable
-		});
+
 	}
 
 	await clearWorkspaceEntities(targetWorkspace);
