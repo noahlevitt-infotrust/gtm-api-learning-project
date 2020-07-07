@@ -10,11 +10,13 @@ const msleep = (ms) => new Promise(resolve => {
 
 const backOffOptions = {
 	numOfAttempts: 15,
+	startingDelay: 1000,
 	jitter: 'full',
 	retry: (error, attemptNumber) => {
 		console.log('Failed attempt #' + attemptNumber + ' (' + error + ')');
-		console.log('Attempting to retry...\n');
-		return true;
+		if (error.code === 429)
+			console.log('Attempting to retry...\n');
+		return error.code === 429;
 	}
 };
 
@@ -25,13 +27,13 @@ async function cloneExampleContainer(targetContainerName, targetAccountId, examp
 	const exampleContainer = await getContainerByAccountAndPublicId(testAccount, exampleContainerPublicId);
 	const targetContainer = await findOrCreateContainer(targetContainerName, targetAccountId);
 
-	await clearWorkspaceEntities(await getDefaultWorkspaceByContainer(targetContainer));
+	await deleteWorkspace(await getDefaultWorkspaceByContainer(targetContainer));
 	await cloneContainerEntities(exampleContainer, targetContainer);
 }
 
 async function getContainerByPublicId(publicId) {
 	const response = await backOff(() => tagmanager.accounts.list(), backOffOptions);
-	const accounts = response.data;
+	const accounts = response.data.account;
 
 	for (let i = 0; i < accounts.length; i++) {
 		const container = await getContainerByAccountAndPublicId(accounts[i], publicId);
@@ -93,11 +95,21 @@ async function cloneContainerEntities(exampleContainer, targetContainer) {
 			'waitForTags',
 			'waitForTagsTimeout'
 		];
-		await cloneEntity(targetWorkspace, trigger, fields, 'trigger');
+		await cloneEntity(exampleWorkspace, targetWorkspace, trigger, fields, 'trigger');
 	}
 
 	for (let tag of exampleEntities[1]) {
-
+		const fields = [
+			'blockingTriggerId',
+			'firingTriggerId',
+			'monitoringMetadata',
+			'name',
+			'notes',
+			'parameter',
+			'priority',
+			'type'
+		];
+		await cloneEntity(exampleWorkspace, targetWorkspace, tag, fields, 'tag');
 	}
 
 	for (let variable of exampleEntities[2]) {
@@ -108,7 +120,7 @@ async function cloneContainerEntities(exampleContainer, targetContainer) {
 			'parameter',
 			'type'
 		];
-		await cloneEntity(targetWorkspace, variable, fields, 'variable');
+		await cloneEntity(exampleWorkspace, targetWorkspace, variable, fields, 'variable');
 	}
 }
 
@@ -149,31 +161,41 @@ async function getPropertyByWorkspaceAndName(workspace, name, property) {
 	return !entities ? undefined : entities.find(entity => entity.name === name);
 }
 
-async function cloneEntity(targetWorkspace, entity, fields, property) {
+async function getPropertyNameByWorkspaceAndId(workspace, id, property) {
+	const entityPath = workspace.path + '/' + property + 's/' + id;
+	const response = await backOff(() => tagmanager.accounts.containers.workspaces[property + 's'].get({path: entityPath}), backOffOptions);
+
+	return response.data.name;
+}
+
+async function mapTriggerIds(fromWorkspace, toWorkspace, triggerIds) {
+	return !triggerIds ? undefined : Promise.all(triggerIds.map(id =>
+		getPropertyNameByWorkspaceAndId(fromWorkspace, id, 'trigger')
+			.then(name => getPropertyByWorkspaceAndName(toWorkspace, name, 'trigger'))
+			.then(trigger => trigger.triggerId)
+	));
+}
+
+async function cloneEntity(fromWorkspace, toWorkspace, entity, fields, property) {
 	let requestBody = {};
 	for (let field of fields) {
 		requestBody[field] = entity[field];
 	}
 
+	if (property === 'tag') {
+		requestBody.blockingTriggerId = await mapTriggerIds(fromWorkspace, toWorkspace, requestBody.blockingTriggerId);
+		requestBody.firingTriggerId = await mapTriggerIds(fromWorkspace, toWorkspace, requestBody.firingTriggerId);
+	}
+
 	await backOff(() => tagmanager.accounts.containers.workspaces[property + 's'].create({
-		parent: targetWorkspace.path,
+		parent: toWorkspace.path,
 		requestBody: requestBody
 	}), backOffOptions);
 }
 
-async function clearWorkspaceEntities(workspace) {
-	for (let prop of ["trigger", "tag", "variable"]) {
-		const entities = await getEntityListByWorkspaceAndProperty(workspace, prop);
-		if (entities) {
-			for (let entity of entities) {
-				await backOff(() => tagmanager.accounts.containers.workspaces[prop + 's'].delete({path: entity.path}), backOffOptions);
-			}
-		}
-	}
+async function deleteWorkspace(workspace) {
+	await backOff(() => tagmanager.accounts.containers.workspaces.delete({path: workspace.path}), backOffOptions);
 }
 
 cloneExampleContainer("noah api onboarding container", "28458393", "GTM-PNJH2T")
-	.catch(err => {
-		console.error(err);
-		throw err;
-	});
+	.catch(err => console.error(err));
