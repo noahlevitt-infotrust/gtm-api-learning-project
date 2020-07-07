@@ -66,61 +66,18 @@ async function cloneContainerEntities(exampleContainer, targetContainer) {
 
 	const propNames = ['trigger', 'tag', 'variable'];
 	const exampleEntities = await Promise.all(propNames.map(prop => getEntityListByWorkspaceAndProperty(exampleWorkspace, prop)));
-	const targetEntities = await Promise.all(propNames.map(prop => getEntityListByWorkspaceAndProperty(targetWorkspace, prop)));
+	//const targetEntities = await Promise.all(propNames.map(prop => getEntityListByWorkspaceAndProperty(targetWorkspace, prop)));
 
-	for (let trigger of exampleEntities[0]) {
-		const fields = [
-			'autoEventFilter',
-			'checkValidation',
-			'continuousTimeMinMilliseconds',
-			'customEventFilter',
-			'eventName',
-			'filter',
-			'horizontalScrollPercentageList',
-			'interval',
-			'intervalSeconds',
-			'limit',
-			'maxTimerLengthSeconds',
-			'name',
-			'notes',
-			'parameter',
-			'selector',
-			'totalTimeMinMilliseconds',
-			'type',
-			'uniqueTriggerId',
-			'verticalScrollPercentageList',
-			'visibilitySelector',
-			'visiblePercentageMax',
-			'visiblePercentageMin',
-			'waitForTags',
-			'waitForTagsTimeout'
-		];
-		await cloneEntity(exampleWorkspace, targetWorkspace, trigger, fields, 'trigger');
-	}
-
-	for (let tag of exampleEntities[1]) {
-		const fields = [
-			'blockingTriggerId',
-			'firingTriggerId',
-			'monitoringMetadata',
-			'name',
-			'notes',
-			'parameter',
-			'priority',
-			'type'
-		];
-		await cloneEntity(exampleWorkspace, targetWorkspace, tag, fields, 'tag');
-	}
-
-	for (let variable of exampleEntities[2]) {
-		const fields = [
-			'formatValue',
-			'name',
-			'notes',
-			'parameter',
-			'type'
-		];
-		await cloneEntity(exampleWorkspace, targetWorkspace, variable, fields, 'variable');
+	let triggerMap = {};
+	for (let i = 0; i < 3; i++) {
+		for (let entity of exampleEntities[i]) {
+			if (entity.setupTag) {
+				for (let setupTag in entity.setupTag.map(entry => exampleEntities[1].find(tag => tag.name === entry.tagName))) {
+					await cloneEntity(targetWorkspace, setupTag, propNames[i], triggerMap);
+				}
+			}
+			await cloneEntity(targetWorkspace, entity, propNames[i], triggerMap);
+		}
 	}
 }
 
@@ -161,36 +118,46 @@ async function getPropertyByWorkspaceAndName(workspace, name, property) {
 	return !entities ? undefined : entities.find(entity => entity.name === name);
 }
 
-async function getPropertyNameByWorkspaceAndId(workspace, id, property) {
-	const entityPath = workspace.path + '/' + property + 's/' + id;
-	const response = await backOff(() => tagmanager.accounts.containers.workspaces[property + 's'].get({path: entityPath}), backOffOptions);
-
-	return response.data.name;
+async function createEntity(parent, requestBody, property) {
+	const newEntity = await backOff(() => tagmanager.accounts.containers.workspaces[property + 's'].create({
+		parent: parent,
+		requestBody: requestBody
+	}), backOffOptions);
+	return newEntity.data;
 }
 
-async function mapTriggerIds(fromWorkspace, toWorkspace, triggerIds) {
-	return !triggerIds ? undefined : Promise.all(triggerIds.map(id =>
-		getPropertyNameByWorkspaceAndId(fromWorkspace, id, 'trigger')
-			.then(name => getPropertyByWorkspaceAndName(toWorkspace, name, 'trigger'))
-			.then(trigger => trigger.triggerId)
-	));
-}
+async function cloneEntity(targetWorkspace, entity, property, triggerMap) {
+	let newEntity = await getPropertyByWorkspaceAndName(targetWorkspace, entity.name, property);
+	if (newEntity)
+		return;
 
-async function cloneEntity(fromWorkspace, toWorkspace, entity, fields, property) {
-	let requestBody = {};
-	for (let field of fields) {
-		requestBody[field] = entity[field];
+	let requestBody = JSON.parse(JSON.stringify(entity));
+	const fieldsToRemove = [
+		'accountId',
+		'containerId',
+		'fingerprint',
+		property + 'Id',
+		'parentFolderId',
+		'path',
+		'tagManagerUrl',
+		'workspaceId'
+	];
+	for (let field of fieldsToRemove) {
+		requestBody[field] = undefined;
 	}
 
 	if (property === 'tag') {
-		requestBody.blockingTriggerId = await mapTriggerIds(fromWorkspace, toWorkspace, requestBody.blockingTriggerId);
-		requestBody.firingTriggerId = await mapTriggerIds(fromWorkspace, toWorkspace, requestBody.firingTriggerId);
+		for (let triggers of ['blockingTriggerId', 'firingTriggerId']) {
+			if (requestBody[triggers]) {
+				requestBody[triggers] = requestBody[triggers].map(id => triggerMap[id]);
+			}
+		}
 	}
 
-	await backOff(() => tagmanager.accounts.containers.workspaces[property + 's'].create({
-		parent: toWorkspace.path,
-		requestBody: requestBody
-	}), backOffOptions);
+	newEntity = await createEntity(targetWorkspace.path, requestBody, property);
+	if (property === 'trigger') {
+		triggerMap[entity[property + 'Id']] = newEntity[property + 'Id'];
+	}
 }
 
 async function deleteWorkspace(workspace) {
