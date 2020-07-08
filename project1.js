@@ -72,7 +72,7 @@ async function cloneContainerEntities(exampleContainer, targetContainer) {
 	for (let i = 0; i < 3; i++) {
 		for (let entity of exampleEntities[i]) {
 			if (entity.setupTag) {
-				for (let setupTag in entity.setupTag.map(entry => exampleEntities[1].find(tag => tag.name === entry.tagName))) {
+				for (let setupTag of entity.setupTag.map(entry => exampleEntities[1].find(tag => tag.name === entry.tagName))) {
 					await cloneEntity(targetWorkspace, setupTag, propNames[i], triggerMap);
 				}
 			}
