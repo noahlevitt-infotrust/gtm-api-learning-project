@@ -12,10 +12,12 @@ const backOffOptions = {
 	numOfAttempts: 15,
 	startingDelay: 1000,
 	jitter: 'full',
-	retry: (error, attemptNumber) => {
+	retry(error, attemptNumber) {
 		console.log('Failed attempt #' + attemptNumber + ' (' + error + ')');
-		if (error.code === 429)
-			console.log('Retrying after about ' + 2**(attemptNumber - 1) + ' second(s)...');
+		if (error.code === 429) {
+			const delayTime = this.timeMultiple ** (attemptNumber - 1) * this.startingDelay / 1000;
+			console.log('Retrying after about ' + delayTime + ' second(s)...');
+		}
 		return error.code === 429;
 	}
 };
@@ -81,11 +83,9 @@ async function cloneContainerEntities(exampleContainer, targetContainer) {
 	for (let i = 0; i < 3; i++) {
 		console.log("Cloning " + propNames[i] + "s...");
 		for (let entity of exampleEntities[i]) {
-			if (entity.setupTag) {
-				for (let setupTag of entity.setupTag.map(entry => exampleEntities[1].find(tag => tag.name === entry.tagName))) {
-					await cloneEntity(targetWorkspace, setupTag, propNames[i], triggerMap);
-					alreadyAdded.push(setupTag);
-				}
+			for (let setupTag of entity.setupTag?.map(entry => exampleEntities[1].find(tag => tag.name === entry.tagName)) ?? []) {
+				await cloneEntity(targetWorkspace, setupTag, propNames[i], triggerMap);
+				alreadyAdded.push(setupTag);
 			}
 			if (!alreadyAdded.includes(entity))
 				await cloneEntity(targetWorkspace, entity, propNames[i], triggerMap);
@@ -105,19 +105,19 @@ async function getContainerListByAccount(account) {
 
 async function getContainerByAccountAndPublicId(account, publicId) {
 	const containers = await getContainerListByAccount(account);
-	return !containers ? undefined : containers.find(container => container.publicId === publicId);
+	return containers?.find(container => container.publicId === publicId);
 }
 
 async function getContainerByAccountAndName(account, targetName) {
 	const containers = await getContainerListByAccount(account);
-	return !containers ? undefined : containers.find(container => container.name === targetName);
+	return containers?.find(container => container.name === targetName);
 }
 
 async function getDefaultWorkspaceByContainer(container) {
 	const response = await backOff(() => tagmanager.accounts.containers.workspaces.list({parent: container.path}), backOffOptions);
 	const workspaces = response.data.workspace;
 
-	return !workspaces ? undefined : workspaces.find(workspace => workspace.name === "Default Workspace");
+	return workspaces?.find(workspace => workspace.name === "Default Workspace");
 }
 
 async function getEntityListByWorkspaceAndProperty(workspace, property) {
@@ -151,9 +151,7 @@ async function cloneEntity(targetWorkspace, entity, property, triggerMap) {
 
 	if (property === 'tag') {
 		for (let triggers of ['blockingTriggerId', 'firingTriggerId']) {
-			if (requestBody[triggers]) {
-				requestBody[triggers] = requestBody[triggers].map(id => triggerMap[id]);
-			}
+			requestBody[triggers] = requestBody[triggers]?.map(id => triggerMap[id]);
 		}
 	}
 
