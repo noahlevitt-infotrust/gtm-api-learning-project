@@ -15,19 +15,25 @@ const backOffOptions = {
 	retry: (error, attemptNumber) => {
 		console.log('Failed attempt #' + attemptNumber + ' (' + error + ')');
 		if (error.code === 429)
-			console.log('Attempting to retry...\n');
+			console.log('Retrying after about ' + 2**(attemptNumber - 1) + ' second(s)...');
 		return error.code === 429;
 	}
 };
 
 async function cloneExampleContainer(targetContainerName, targetAccountId, exampleContainerPublicId) {
 	tagmanager = google.tagmanager({version: 'v2', auth: await getOAuth2Client()});
-
 	const testAccount = await getAccountById("38028818");
+
+	console.log("Getting example container...");
 	const exampleContainer = await getContainerByAccountAndPublicId(testAccount, exampleContainerPublicId);
+
+	console.log("Getting target container...");
 	const targetContainer = await findOrCreateContainer(targetContainerName, targetAccountId);
 
+	console.log("Clearing target workspace...");
 	await deleteWorkspace(await getDefaultWorkspaceByContainer(targetContainer));
+
+	console.log("Preparing to clone container entities...");
 	await cloneContainerEntities(exampleContainer, targetContainer);
 }
 
@@ -61,22 +67,28 @@ async function findOrCreateContainer(newContainerName, targetAccountId) {
 }
 
 async function cloneContainerEntities(exampleContainer, targetContainer) {
+	console.log("Getting workspaces...");
 	const exampleWorkspace = await getDefaultWorkspaceByContainer(exampleContainer);
 	const targetWorkspace = await getDefaultWorkspaceByContainer(targetContainer);
 
+	console.log("Getting example entities...");
 	const propNames = ['trigger', 'tag', 'variable'];
 	const exampleEntities = await Promise.all(propNames.map(prop => getEntityListByWorkspaceAndProperty(exampleWorkspace, prop)));
 	//const targetEntities = await Promise.all(propNames.map(prop => getEntityListByWorkspaceAndProperty(targetWorkspace, prop)));
 
 	let triggerMap = {};
+	let alreadyAdded = [];
 	for (let i = 0; i < 3; i++) {
+		console.log("Cloning " + propNames[i] + "s...");
 		for (let entity of exampleEntities[i]) {
 			if (entity.setupTag) {
 				for (let setupTag of entity.setupTag.map(entry => exampleEntities[1].find(tag => tag.name === entry.tagName))) {
 					await cloneEntity(targetWorkspace, setupTag, propNames[i], triggerMap);
+					alreadyAdded.push(setupTag);
 				}
 			}
-			await cloneEntity(targetWorkspace, entity, propNames[i], triggerMap);
+			if (!alreadyAdded.includes(entity))
+				await cloneEntity(targetWorkspace, entity, propNames[i], triggerMap);
 		}
 	}
 }
@@ -113,11 +125,6 @@ async function getEntityListByWorkspaceAndProperty(workspace, property) {
 	return response.data[property];
 }
 
-async function getPropertyByWorkspaceAndName(workspace, name, property) {
-	const entities = await getEntityListByWorkspaceAndProperty(workspace, property);
-	return !entities ? undefined : entities.find(entity => entity.name === name);
-}
-
 async function createEntity(parent, requestBody, property) {
 	const newEntity = await backOff(() => tagmanager.accounts.containers.workspaces[property + 's'].create({
 		parent: parent,
@@ -127,10 +134,6 @@ async function createEntity(parent, requestBody, property) {
 }
 
 async function cloneEntity(targetWorkspace, entity, property, triggerMap) {
-	let newEntity = await getPropertyByWorkspaceAndName(targetWorkspace, entity.name, property);
-	if (newEntity)
-		return;
-
 	let requestBody = JSON.parse(JSON.stringify(entity));
 	const fieldsToRemove = [
 		'accountId',
@@ -154,7 +157,7 @@ async function cloneEntity(targetWorkspace, entity, property, triggerMap) {
 		}
 	}
 
-	newEntity = await createEntity(targetWorkspace.path, requestBody, property);
+	const newEntity = await createEntity(targetWorkspace.path, requestBody, property);
 	if (property === 'trigger') {
 		triggerMap[entity[property + 'Id']] = newEntity[property + 'Id'];
 	}
@@ -165,4 +168,5 @@ async function deleteWorkspace(workspace) {
 }
 
 cloneExampleContainer("noah api onboarding container", "28458393", "GTM-PNJH2T")
+	.then(() => console.log("Done!"))
 	.catch(err => console.error(err));
