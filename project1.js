@@ -17,7 +17,7 @@ const backOffOptions = {
 	retry(error, attemptNumber) {
 		console.log('Failed attempt #' + attemptNumber + ' (' + error + ')');
 		if (error.code === 429) {
-			const delayTime = Math.min(this.timeMultiple ** (attemptNumber - 1) * this.startingDelay / 1000, this.maxDelay / 1000);
+			const delayTime = Math.min(this.timeMultiple**attemptNumber * this.startingDelay / 1000, this.maxDelay / 1000);
 			console.log('Retrying after about ' + delayTime + ' second(s)...');
 		}
 		return error.code === 429;
